@@ -122,3 +122,50 @@ def make_combinations(symbols, dates):
     ]
 
 
+@task
+def fetch_shareholders(symbol: SymbolData, date_str: str):
+    """
+        Fetch shareholder information for a given symbol and date from the TSETMC API.
+
+        This function sends a request to the TSETMC Shareholder API and retrieves
+        shareholder data for the specified symbol and date. It validates the date field
+        in each record and creates structured objects for valid entries.
+
+        Args:
+            symbol (SymbolData): A SymbolData object representing the target symbol.
+            date_str (str): Trade date in "YYYYMMDD" format.
+        Returns:
+            list[HoldingDailyData]: A list of HoldingDailyData objects containing:
+                - symbol: The given symbol
+                - holder: A HolderData object with shareholder name and code
+                - trade_date: The date of the data
+                - shares: Number of shares held
+                - percentage: Percentage of ownership
+        Raises:
+            RequestException and ValueError
+    """
+    url = f"https://cdn.tsetmc.com/api/Shareholder/{symbol}/{date_str}"
+    response = requests.get(url)
+    if not str(response.status_code).startswith("2"):
+        return []
+
+    daily_information_holders = response.json().get("shareShareholder", [])
+    shareholders = []
+    for daily_information_holder in daily_information_holders:
+        if str(daily_information_holder["dEven"]) != date_str:
+            continue
+
+        shareholder = HolderData(
+            holder_name=daily_information_holder.get("shareHolderName"),
+            holder_code=str(daily_information_holder.get("shareHolderShareID")),
+        )
+        holding_daily_data = HoldingDailyData(
+            symbol=symbol,
+            holder=shareholder,
+            trade_date=date_str,
+            shares=daily_information_holder.get("numberOfShares"),
+            percentage=daily_information_holder.get("perOfShares"),
+        )
+        shareholders.append(holding_daily_data)
+
+    return shareholders
