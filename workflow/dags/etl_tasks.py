@@ -12,8 +12,7 @@ from persiantools.jdatetime import JalaliDate
 from data_class import *
 
 
-# shared_directory = os.getenv('SHARED_DIR', "/opt/airflow/shared")
-shared_directory = '../../shared'
+shared_directory = os.getenv('SHARED_DIR', "/opt/airflow/shared")
 prefix = os.getenv('prefix_csv_shareholders', "shareholders")
 
 
