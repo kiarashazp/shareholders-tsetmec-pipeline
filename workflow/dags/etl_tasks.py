@@ -10,12 +10,14 @@ import requests
 from persiantools.jdatetime import JalaliDate
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
+from dotenv import load_dotenv, find_dotenv
 
 from data_class import *
 from database import *
 from models import *
 
 
+load_dotenv(find_dotenv())
 shared_directory = os.getenv('SHARED_DIR', "/opt/airflow/shared")
 prefix = os.getenv('prefix_csv_shareholders', "shareholders")
 
@@ -341,8 +343,8 @@ def upsert_data_to_postgres(csv_path: str, session_factory=SessionLocal):
 
 
 @task
-def cleanup(is_insert_data, directory=shared_directory, prefix_file="shareholders"):
-    if not is_insert_data:
+def cleanup(successfully, directory=shared_directory, prefix_file="shareholders"):
+    if not successfully:
         return False
 
     if not os.path.exists(directory):
