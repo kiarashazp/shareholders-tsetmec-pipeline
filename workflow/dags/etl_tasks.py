@@ -49,14 +49,14 @@ def read_symbols_from_file(file_path: str):
         with open(file_path, "r", encoding="utf-8") as f:
             data = json.load(f)
         symbols = data.get("ins_codes", [])
-        return [SymbolData(str(symbol)) for symbol in symbols if symbol]
+        return [str(symbol) for symbol in symbols if symbol]
 
     elif extension == '.csv':
         with open(file_path, "r", newline='', encoding="utf-8") as f:
             reader = csv.DictReader(f)
             if "ins_codes" not in reader.fieldnames:
                 raise KeyError("CSV file must contain 'ins_codes' column.")
-            return [SymbolData(str(row["ins_codes"])) for row in reader if row.get("ins_codes")]
+            return [str(row["ins_codes"]) for row in reader if row.get("ins_codes")]
 
     else:
         raise ValueError("Unsupported file format. Use JSON or CSV.")
@@ -129,12 +129,12 @@ def make_combinations(symbols, dates):
             ]
     """
     return [
-        {"symbol": combination[0].ins_code, "date_str": combination[1]} for combination in list(product(symbols, dates))
+        {"symbol": combination[0], "date_str": combination[1]} for combination in list(product(symbols, dates))
     ]
 
 
 @task
-def fetch_shareholders(symbol: SymbolData, date_str: str):
+def fetch_shareholders(symbol, date_str: str):
     """
         Fetch shareholder information for a given symbol and date from the TSETMC API.
 
@@ -165,19 +165,15 @@ def fetch_shareholders(symbol: SymbolData, date_str: str):
     for daily_information_holder in daily_information_holders:
         if str(daily_information_holder["dEven"]) != date_str:
             continue
-
-        shareholder = HolderData(
-            holder_name=daily_information_holder.get("shareHolderName"),
-            holder_code=str(daily_information_holder.get("shareHolderShareID")),
-        )
-        holding_daily_data = HoldingDailyData(
-            symbol=symbol,
-            holder=shareholder,
-            trade_date=date_str,
-            shares=daily_information_holder.get("numberOfShares"),
-            percentage=daily_information_holder.get("perOfShares"),
-        )
-        shareholders.append(holding_daily_data)
+        data = {
+            'symbol': str(symbol),
+            'trade_date': date_str,
+            'shares': daily_information_holder.get("numberOfShares", 0),
+            'percentage': daily_information_holder.get("perOfShares", 0.0),
+            'holder_name': str(daily_information_holder.get("shareHolderName")),
+            'holder_code': str(daily_information_holder.get("shareHolderShareID")),
+        }
+        shareholders.append(data)
 
     return shareholders
 
@@ -186,15 +182,15 @@ def fetch_shareholders(symbol: SymbolData, date_str: str):
 def save_to_csv(records: list):
     """
         Save a list of HoldingDailyData records to a CSV file.
-        Each HoldingDailyData object is flattened into a dictionary with the following fields:
-            - symbol (str): Instrument code (from SymbolData.ins_code)
-            - holder_code (str): Unique code of the shareholder (from HolderData.holder_code)
-            - holder_name (str): Display name of the shareholder (from HolderData.holder_name)
+        Each records object is flattened into a dictionary with the following fields:
+            - symbol (str): Instrument code
+            - holder_code (str): Unique code of the shareholder
+            - holder_name (str): Display name of the shareholder
             - trade_date (str): Trade date, typically in "YYYYMMDD" format
             - shares (int|float): Number of shares held
             - percentage (float): Percentage of ownership
         Args:
-            records (list): List of HoldingDailyData objects to be written.
+            records (list): List of dict objects to be written.
         Returns:
             str: The absolute path to the generated CSV file.
         Raises:
@@ -202,47 +198,39 @@ def save_to_csv(records: list):
             OSError: If directory creation or file writing fails.
     """
     def _flatten(row):
-        """
-            Convert a HoldingDailyData record to a flat dict matching `fieldnames`.
-        """
-        if is_dataclass(row):
-            symbol_obj = getattr(row, "symbol", None)
-            holder_obj = getattr(row, "holder", None)
-
-            symbol_code = getattr(symbol_obj, "ins_code", None) if symbol_obj else None
-            holder_code = getattr(holder_obj, "holder_code", None) if holder_obj else None
-            holder_name = getattr(holder_obj, "holder_name", None) if holder_obj else None
-            trade_date = getattr(row, "trade_date", None)
-            shares = getattr(row, "shares", None)
-            percentage = getattr(row, "percentage", None)
-
-        else:
+        if not isinstance(row, dict):
             raise ValueError(f"Unsupported record type: {type(row)}")
 
+        try:
+            shares = str(row.get('shares'))
+            percentage = str(row.get("percentage"))
+            shares = int(float(shares.strip().replace(",", ""))) if shares else 0
+            percentage = float(percentage.strip().replace(",", "")) if percentage else 0.0
+        except (ValueError, TypeError, AttributeError):
+            shares, percentage = 0, 0.0
+
         data = {
-            "symbol": str(symbol_code) if symbol_code else "",
-            "holder_code": str(holder_code) if holder_code else "",
-            "holder_name": str(holder_name) if holder_name else "",
-            "trade_date": str(trade_date) if trade_date else "",
-            "shares": shares if shares else "",
-            "percentage": percentage if percentage else "",
+            "shares": shares,
+            "percentage": percentage,
+            "symbol": str(row.get("symbol", "")).strip(),
+            "trade_date": str(row.get("trade_date", "")).strip(),
+            "holder_code": str(row.get("holder_code", "")).strip(),
+            "holder_name": str(row.get("holder_name", "")).strip(),
         }
 
         if not (data["symbol"] and data["trade_date"] and data["holder_name"]):
             raise ValueError(f"Record missing required fields (symbol/trade_date/holder_name): {row}")
         return data
 
-    output_path = f"{shared_directory}/{prefix}_{datetime.now().timestamp()}.csv"
+    output_path = f"{shared_directory}/{prefix}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+    fieldnames = ["symbol", "holder_code", "holder_name", "trade_date", "shares", "percentage"]
     if not records:
         return output_path
-
-    fieldnames = ["symbol", "holder_code", "holder_name", "trade_date", "shares", "percentage"]
-    os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
 
     with open(output_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
-
         if records:
             for record in records:
                 writer.writerow(_flatten(row=record))
