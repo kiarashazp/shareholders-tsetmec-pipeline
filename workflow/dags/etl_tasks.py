@@ -1,6 +1,6 @@
 import csv
 import json
-import os
+
 from dataclasses import is_dataclass
 from datetime import datetime, timedelta
 from itertools import product
@@ -8,8 +8,12 @@ from itertools import product
 from airflow.decorators import task
 import requests
 from persiantools.jdatetime import JalaliDate
+from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 
 from data_class import *
+from database import *
+from models import *
 
 
 shared_directory = os.getenv('SHARED_DIR', "/opt/airflow/shared")
@@ -242,3 +246,116 @@ def save_to_csv(records: list):
                 writer.writerow(_flatten(row=record))
 
     return output_path
+
+
+@task
+def upsert_data_to_postgres(csv_path: str, session_factory=SessionLocal):
+    """
+        Load shareholder holdings data from a CSV file into the PostgreSQL database.
+
+        Args:
+            csv_path (str): Path to the input CSV file.
+            session_factory (Callable): A SQLAlchemy session factory, defaults to `SessionLocal`.
+        Returns:
+            bool: True if at least one new `HoldingDaily` record was inserted,
+                  False if no new records were added.
+        Raises:
+            FileNotFoundError, ValueError, SQLAlchemyError
+    """
+    if not os.path.exists(csv_path):
+        raise FileNotFoundError(f"CSV file not found: {csv_path}")
+
+    required_headers = {"symbol", "holder_code", "holder_name", "trade_date", "shares", "percentage"}
+    inserted_any = False
+
+    with session_factory() as session:
+        try:
+            with open(csv_path, "r", newline="", encoding="utf-8") as file:
+                reader = csv.DictReader(file)
+                headers = set(reader.fieldnames or [])
+                missing = required_headers - headers
+                if missing:
+                    raise ValueError(f"CSV missing required columns: {', '.join(sorted(missing))}")
+
+                with session.begin():
+                    for row in reader:
+                        symbol_code = (row["symbol"] or "").strip()
+                        holder_code = (row["holder_code"] or "").strip()
+                        holder_name = (row["holder_name"] or "").strip()
+                        trade_date_str = (row["trade_date"] or "").strip()
+
+                        if not (symbol_code and holder_code and holder_name and trade_date_str):
+                            continue
+
+                        try:
+                            trade_date = datetime.strptime(trade_date_str, "%Y%m%d").date()
+                        except ValueError:
+                            raise ValueError(f"Invalid trade_date '{trade_date_str}' (expected YYYYMMDD).")
+
+                        try:
+                            shares = str(row.get('shares'))
+                            percentage = str(row.get("percentage"))
+                            shares = int(float(shares.strip().replace(",", ""))) if shares else 0
+                            percentage = float(percentage.strip().replace(",", "")) if percentage else 0.0
+                        except (ValueError, TypeError, AttributeError):
+                            shares, percentage = 0, 0.0
+
+                        # get_or_create Symbol
+                        symbol_obj = session.execute(select(Symbol).where(Symbol.ins_code == symbol_code)).scalar_one_or_none()
+                        if symbol_obj is None:
+                            symbol_obj = Symbol(ins_code=symbol_code)
+                            session.add(symbol_obj)
+                            session.flush()
+
+                        # get_or_create Holder
+                        holder_obj = session.execute(
+                            select(Holder).where(Holder.holder_code == holder_code)
+                        ).scalar_one_or_none()
+                        if holder_obj is None:
+                            holder_obj = Holder(holder_code=holder_code, holder_name=holder_name)
+                            session.add(holder_obj)
+                            session.flush()
+
+                        # is_exists for (symbol, holder, date) in HoldingDaily
+                        exists = session.execute(
+                            select(HoldingDaily.id).where(
+                                HoldingDaily.symbol_id == symbol_obj.id,
+                                HoldingDaily.holder_id == holder_obj.id,
+                                HoldingDaily.trade_date == trade_date,
+                            )
+                        ).scalar_one_or_none()
+
+                        if exists is None:
+                            session.add(
+                                HoldingDaily(
+                                    symbol_id=symbol_obj.id, holder_id=holder_obj.id, trade_date=trade_date,
+                                    shares=shares, percentage=percentage,
+                                )
+                            )
+                            inserted_any = True
+            return inserted_any
+
+        except SQLAlchemyError:
+            session.rollback()
+            raise
+
+
+@task
+def cleanup(is_insert_data, directory=shared_directory, prefix_file="shareholders"):
+    if not is_insert_data:
+        return False
+
+    if not os.path.exists(directory):
+        print(f"Directory {directory} does not exist.")
+        return False
+
+    for filename in os.listdir(directory):
+        if filename.startswith(f"{prefix_file}_") and filename.endswith('.csv'):
+            file_path = os.path.join(directory, filename)
+            try:
+                os.remove(file_path)
+                print(f"Deleted file: {file_path}")
+                return True
+            except Exception as e:
+                print(f"Failed to delete {file_path}: {e}")
+                return False
