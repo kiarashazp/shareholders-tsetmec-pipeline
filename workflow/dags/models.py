@@ -1,3 +1,14 @@
+"""
+Database models for the ETL shareholders pipeline.
+
+This module defines the core relational schema using SQLAlchemy ORM:
+  - Symbol: Symbol identified by INS codes
+  - Holder: shareholders (legal or natural persons)
+  - HoldingDaily: daily snapshots linking holders and symbols with ownership data
+
+Indexes are defined for efficient time-series queries by symbol, holder, and trade date.
+"""
+
 from sqlalchemy import Column, String, BigInteger, Float, Date, ForeignKey, Integer, Index
 from sqlalchemy.orm import declarative_base, relationship
 

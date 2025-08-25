@@ -11,7 +11,6 @@ x-airflow-env:
   SHARED_DIR: ${SHARED_DIR}
   AIRFLOW_ADMIN_USERNAME: ${AIRFLOW_ADMIN_USERNAME}
   AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD}
-  AIRFLOW__CORE__ALLOWED_DESERIALIZATION_CLASSES: "workflow.dags.data_class.*"
 
 
 services:
@@ -114,7 +113,6 @@ services:
     env_file: .env
     environment:
       AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
-      AIRFLOW__CORE__ALLOWED_DESERIALIZATION_CLASSES: "workflow.dags.data_class.*"
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_AIRFLOW_USER}:${POSTGRES_AIRFLOW_PASSWORD}@postgres-airflow:5432/${POSTGRES_AIRFLOW_DB}
     command: >
       bash -c "
@@ -137,7 +135,6 @@ services:
     env_file: .env
     environment:
       AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
-      AIRFLOW__CORE__ALLOWED_DESERIALIZATION_CLASSES: "workflow.dags.data_class.*"
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_AIRFLOW_USER}:${POSTGRES_AIRFLOW_PASSWORD}@postgres-airflow:5432/${POSTGRES_AIRFLOW_DB}
     ports:
       - "8080:8080"

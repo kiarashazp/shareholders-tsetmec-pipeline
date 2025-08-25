@@ -1,3 +1,19 @@
+"""
+Airflow DAG definition for the Shareholders ETL pipeline.
+
+This DAG orchestrates the daily extraction, transformation, and loading (ETL)
+of shareholder data from the TSETMC API into a PostgreSQL database.
+The pipeline includes the following steps:
+    1. Read symbol list from a JSON/CSV file in the shared directory.
+    2. Generate the most recent 10 valid working dates (based on the Jalali calendar).
+    3. Create all combinations of symbols and dates.
+    4. Fetch shareholder data from the TSETMC API for each combination.
+    5. Save the fetched records into CSV files.
+    6. Upsert the data from CSV files into the PostgreSQL ETL database.
+    7. Clean up temporary CSV files after successful load.
+The DAG is scheduled to run daily and supports retries in case of transient failures.
+"""
+
 from etl_tasks import *
 
 from airflow import DAG
@@ -29,7 +45,7 @@ with DAG(
 
         shareholders = fetch_shareholders.expand_kwargs(combinations)
 
-        output_csv = save_to_csv(shareholders)
+        output_csv = save_to_csv.expand(shareholders)
 
         successfully = upsert_data_to_postgres(output_csv)
 

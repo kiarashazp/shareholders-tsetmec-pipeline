@@ -25,14 +25,14 @@ prefix = os.getenv('prefix_csv_shareholders', "shareholders")
 @task
 def read_symbols_from_file(file_path: str):
     """
-        Read symbol data from a JSON or CSV file and return a list of SymbolData objects.
+        Read symbol data from a JSON or CSV file and return a list symbols
         This function supports two file formats:
           - JSON: The file must contain a key named "ins_codes" with a list of symbols.
           - CSV:  The file must contain a column named "ins_codes" with symbol values.
         Args:
             file_path (str): Path to the input file (must be .json or .csv).
         Returns:
-            list[SymbolData]: A list of SymbolData objects extracted from the file.
+            list[symbols]: A list of SymbolData objects extracted from the file.
         Raises:
             FileNotFoundError: If the given file path does not exist.
             KeyError: If the CSV file does not contain an "ins_codes" column.
