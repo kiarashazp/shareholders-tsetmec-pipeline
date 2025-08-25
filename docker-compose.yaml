@@ -1,0 +1,160 @@
+x-airflow-env:
+  AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+  AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+  AIRFLOW__CORE__EXECUTOR: LocalExecutor
+  AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+  AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
+  AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_AIRFLOW_USER}:${POSTGRES_AIRFLOW_PASSWORD}@postgres:5432/${POSTGRES_AIRFLOW_DB}
+  AIRFLOW_CONN_POSTGRES_DEFAULT: postgres://${POSTGRES_ETL_USER}:${POSTGRES_ETL_PASSWORD}@postgres:5432/${POSTGRES_ETL_DB}
+  PG_DSN: postgresql+psycopg2://${POSTGRES_ETL_USER}:${POSTGRES_ETL_PASSWORD}@postgres:5432/${POSTGRES_ETL_DB}
+  PIP_NO_CACHE_DIR: "1"
+  SHARED_DIR: ${SHARED_DIR}
+  AIRFLOW_ADMIN_USERNAME: ${AIRFLOW_ADMIN_USERNAME}
+  AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD}
+  AIRFLOW__CORE__ALLOWED_DESERIALIZATION_CLASSES: "workflow.dags.data_class.*"
+
+
+services:
+  postgres-airflow:
+    image: postgres:15
+    container_name: postgres-airflow
+    env_file: .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_AIRFLOW_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_AIRFLOW_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_AIRFLOW_DB}
+    volumes:
+      - pgdata-airflow:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    networks:
+      - airflow-net
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_AIRFLOW_USER} -d ${POSTGRES_AIRFLOW_DB}" ]
+
+  postgres-etl:
+    image: postgres:15
+    container_name: postgres-etl
+    env_file: .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_ETL_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_ETL_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_ETL_DB}
+    volumes:
+      - pgdata-etl:/var/lib/postgresql/data
+    ports:
+      - "5434:5432"
+    networks:
+      - airflow-net
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_ETL_USER} -d ${POSTGRES_ETL_DB}" ]
+
+  etl-init:
+    image: python:3.12-slim
+    depends_on:
+      postgres-etl:
+        condition: service_healthy
+    working_dir: /opt/airflow
+    volumes:
+      - ./workflow/dags/:/opt/airflow
+    env_file: .env
+    environment:
+      POSTGRES_ETL_USER: ${POSTGRES_ETL_USER}
+      POSTGRES_ETL_PASSWORD: ${POSTGRES_ETL_PASSWORD}
+      POSTGRES_ETL_DB: ${POSTGRES_ETL_DB}
+      PG_DSN: postgresql+psycopg2://${POSTGRES_ETL_USER}:${POSTGRES_ETL_PASSWORD}@postgres-etl:5432/${POSTGRES_ETL_DB}
+    command: >
+      bash -c "
+      pip install --no-cache-dir psycopg2-binary sqlalchemy dotenv &&
+      python initialize_database.py
+      "
+    networks:
+      - airflow-net
+    restart: "no"
+
+  pgadmin:
+    image: dpage/pgadmin4
+    env_file: .env
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+    depends_on:
+      - postgres-airflow
+      - postgres-etl
+    ports:
+      - "8081:80"
+    networks:
+      - airflow-net
+
+  airflow-init:
+    image: apache/airflow:2.9.0
+    depends_on:
+      postgres-airflow:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_AIRFLOW_USER}:${POSTGRES_AIRFLOW_PASSWORD}@postgres-airflow:5432/${POSTGRES_AIRFLOW_DB}
+      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
+      _AIRFLOW_WWW_USER_USERNAME: ${AIRFLOW_ADMIN_USERNAME}
+      _AIRFLOW_WWW_USER_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD}
+    command: >
+      bash -c "
+      airflow db init &&
+      airflow users create --username ${AIRFLOW_ADMIN_USERNAME} --password ${AIRFLOW_ADMIN_PASSWORD} --firstname Admin --lastname User --role Admin --email admin@example.com
+      "
+    networks:
+      - airflow-net
+    restart: "no"
+
+  airflow-scheduler:
+    image: apache/airflow:2.9.0
+    depends_on:
+      airflow-init:
+          condition: service_completed_successfully
+    env_file: .env
+    environment:
+      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
+      AIRFLOW__CORE__ALLOWED_DESERIALIZATION_CLASSES: "workflow.dags.data_class.*"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_AIRFLOW_USER}:${POSTGRES_AIRFLOW_PASSWORD}@postgres-airflow:5432/${POSTGRES_AIRFLOW_DB}
+    command: >
+      bash -c "
+      pip install --no-cache-dir -r /opt/airflow/requirements.txt &&
+      airflow scheduler
+      "
+    volumes:
+      - ./workflow/:/opt/airflow/
+      - ./shared/:${SHARED_DIR}
+    networks:
+      - airflow-net
+
+  airflow-webserver:
+    image: apache/airflow:2.9.0
+    depends_on:
+      postgres-airflow:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+    env_file: .env
+    environment:
+      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
+      AIRFLOW__CORE__ALLOWED_DESERIALIZATION_CLASSES: "workflow.dags.data_class.*"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_AIRFLOW_USER}:${POSTGRES_AIRFLOW_PASSWORD}@postgres-airflow:5432/${POSTGRES_AIRFLOW_DB}
+    ports:
+      - "8080:8080"
+    command: >
+      bash -c "
+      pip install --no-cache-dir -r /opt/airflow/requirements.txt &&
+      airflow webserver
+      "
+    volumes:
+      - ./workflow/:/opt/airflow/
+      - ./shared/:${SHARED_DIR}
+    networks:
+      - airflow-net
+
+volumes:
+  pgdata-airflow:
+  pgdata-etl:
+
+networks:
+  airflow-net:

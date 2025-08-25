@@ -181,7 +181,7 @@ def fetch_shareholders(symbol, date_str: str):
 @task
 def save_to_csv(records: list):
     """
-        Save a list of HoldingDailyData records to a CSV file.
+        Save a list of records to a CSV file.
         Each records object is flattened into a dictionary with the following fields:
             - symbol (str): Instrument code
             - holder_code (str): Unique code of the shareholder
