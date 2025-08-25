@@ -1,6 +1,7 @@
 import csv
 import json
 import os
+from dataclasses import is_dataclass
 from datetime import datetime, timedelta
 from itertools import product
 
@@ -176,35 +177,68 @@ def fetch_shareholders(symbol: SymbolData, date_str: str):
 
 
 @task
-def save_to_csv(records: list, output_path: str = f"{shared_directory}/{prefix}_{datetime.now()}.csv"):
+def save_to_csv(records: list):
     """
-        Save a list of records (dictionaries) to a CSV file.
-
-        This function takes a list of dictionary records and writes them into a CSV file.
-        The CSV file will include a header row derived from the dictionary keys.
-        If the output directory does not exist, it will be created automatically.
-
+        Save a list of HoldingDailyData records to a CSV file.
+        Each HoldingDailyData object is flattened into a dictionary with the following fields:
+            - symbol (str): Instrument code (from SymbolData.ins_code)
+            - holder_code (str): Unique code of the shareholder (from HolderData.holder_code)
+            - holder_name (str): Display name of the shareholder (from HolderData.holder_name)
+            - trade_date (str): Trade date, typically in "YYYYMMDD" format
+            - shares (int|float): Number of shares held
+            - percentage (float): Percentage of ownership
         Args:
-            records (list[dict]): A list of dictionaries representing rows to be saved.
-                                  All dictionaries should have the same keys.
-            output_path (str, optional): Destination path for the output CSV file.
-                                         Defaults to "<shared_directory>/<prefix>_<timestamp>.csv".
-
+            records (list): List of HoldingDailyData objects to be written.
         Returns:
-            str: The path to the generated CSV file. If `records` is empty,
-                 the file will not be created and only the output path is returned.
-
+            str: The absolute path to the generated CSV file.
         Raises:
-            OSError: If there is an error creating directories or writing the file.
-            ValueError: If `records` is not a list of dictionaries.
+            ValueError: If a record cannot be flattened to required fields.
+            OSError: If directory creation or file writing fails.
     """
+    def _flatten(row):
+        """
+            Convert a HoldingDailyData record to a flat dict matching `fieldnames`.
+        """
+        if is_dataclass(row):
+            symbol_obj = getattr(row, "symbol", None)
+            holder_obj = getattr(row, "holder", None)
+
+            symbol_code = getattr(symbol_obj, "ins_code", None) if symbol_obj else None
+            holder_code = getattr(holder_obj, "holder_code", None) if holder_obj else None
+            holder_name = getattr(holder_obj, "holder_name", None) if holder_obj else None
+            trade_date = getattr(row, "trade_date", None)
+            shares = getattr(row, "shares", None)
+            percentage = getattr(row, "percentage", None)
+
+        else:
+            raise ValueError(f"Unsupported record type: {type(row)}")
+
+        data = {
+            "symbol": str(symbol_code) if symbol_code else "",
+            "holder_code": str(holder_code) if holder_code else "",
+            "holder_name": str(holder_name) if holder_name else "",
+            "trade_date": str(trade_date) if trade_date else "",
+            "shares": shares if shares else "",
+            "percentage": percentage if percentage else "",
+        }
+
+        if not (data["symbol"] and data["trade_date"] and data["holder_name"]):
+            raise ValueError(f"Record missing required fields (symbol/trade_date/holder_name): {row}")
+        return data
+
+    output_path = f"{shared_directory}/{prefix}_{datetime.now()}.csv"
     if not records:
         return output_path
 
-    fieldnames = records[0].keys()
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    fieldnames = ["symbol", "holder_code", "holder_name", "trade_date", "shares", "percentage"]
+    os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+
     with open(output_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
-        writer.writerows(records)
+
+        if records:
+            for record in records:
+                writer.writerow(_flatten(row=record))
+
     return output_path
