@@ -39,7 +39,6 @@ pgdata/
 *.dump
 *.backup
 
-shared/*
 !shared/.gitkeep
 
 .DS_Store
