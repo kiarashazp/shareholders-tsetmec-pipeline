@@ -1,7 +1,7 @@
 import csv
 import json
 import os
-from datetime import timedelta
+from datetime import datetime, timedelta
 from itertools import product
 
 from airflow.decorators import task
@@ -9,6 +9,10 @@ import requests
 from persiantools.jdatetime import JalaliDate
 
 from data_class import *
+
+
+shared_directory = os.getenv('SHARED_DIR', "/opt/airflow/shared")
+prefix = os.getenv('prefix_csv_shareholders', "shareholders")
 
 
 @task
@@ -169,3 +173,38 @@ def fetch_shareholders(symbol: SymbolData, date_str: str):
         shareholders.append(holding_daily_data)
 
     return shareholders
+
+
+@task
+def save_to_csv(records: list, output_path: str = f"{shared_directory}/{prefix}_{datetime.now()}.csv"):
+    """
+        Save a list of records (dictionaries) to a CSV file.
+
+        This function takes a list of dictionary records and writes them into a CSV file.
+        The CSV file will include a header row derived from the dictionary keys.
+        If the output directory does not exist, it will be created automatically.
+
+        Args:
+            records (list[dict]): A list of dictionaries representing rows to be saved.
+                                  All dictionaries should have the same keys.
+            output_path (str, optional): Destination path for the output CSV file.
+                                         Defaults to "<shared_directory>/<prefix>_<timestamp>.csv".
+
+        Returns:
+            str: The path to the generated CSV file. If `records` is empty,
+                 the file will not be created and only the output path is returned.
+
+        Raises:
+            OSError: If there is an error creating directories or writing the file.
+            ValueError: If `records` is not a list of dictionaries.
+    """
+    if not records:
+        return output_path
+
+    fieldnames = records[0].keys()
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    with open(output_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(records)
+    return output_path
