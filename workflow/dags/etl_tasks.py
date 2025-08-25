@@ -12,7 +12,8 @@ from persiantools.jdatetime import JalaliDate
 from data_class import *
 
 
-shared_directory = os.getenv('SHARED_DIR', "/opt/airflow/shared")
+# shared_directory = os.getenv('SHARED_DIR', "/opt/airflow/shared")
+shared_directory = '../../shared'
 prefix = os.getenv('prefix_csv_shareholders', "shareholders")
 
 
@@ -226,7 +227,7 @@ def save_to_csv(records: list):
             raise ValueError(f"Record missing required fields (symbol/trade_date/holder_name): {row}")
         return data
 
-    output_path = f"{shared_directory}/{prefix}_{datetime.now()}.csv"
+    output_path = f"{shared_directory}/{prefix}_{datetime.now().timestamp()}.csv"
     if not records:
         return output_path
 
