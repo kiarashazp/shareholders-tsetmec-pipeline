@@ -13,7 +13,7 @@ The pipeline includes the following steps:
     7. Clean up temporary CSV files after successful load.
 The DAG is scheduled to run daily and supports retries in case of transient failures.
 """
-
+import logging
 from etl_tasks import *
 
 from airflow import DAG
@@ -22,6 +22,7 @@ from dotenv import load_dotenv, find_dotenv
 
 
 load_dotenv(find_dotenv())
+logger = logging.getLogger("shareholders_pipeline")
 shared_directory = os.getenv('SHARED_DIR', "/opt/airflow/shared")
 default_args = {
     'owner': 'airflow',
@@ -38,19 +39,27 @@ with DAG(
 
     try:
         symbols = read_symbols_from_file(f"{shared_directory}/symbols.json")
+        logger.info(f"✅ Loaded {len(symbols)} symbols")
 
         dates = generate_dates()
+        logger.info(f"✅ Generated {len(dates)} working dates")
 
         combinations = make_combinations(symbols, dates)
+        logger.info(f"✅ Created {len(combinations)} symbol-date combinations")
 
         shareholders = fetch_shareholders.expand_kwargs(combinations)
+        logger.info(f"✅ finished fetch_shareholders")
 
-        output_csv = save_to_csv.expand(shareholders)
+        output_csv = save_to_csv.expand(records=shareholders)
+        logger.info(f"✅ save csv ")
 
-        successfully = upsert_data_to_postgres(output_csv)
+        successfully = upsert_data_to_postgres.expand(csv_path=output_csv)
+        logger.info(f"✅ insert to postgres")
 
         cleanup(successfully)
+        logger.info(f"✅ cleaned up")
     except Exception as e:
-        print(f"-------- {e} -------")
+        logger.exception(f"❌ DAG failed due to unexpected error: {type(e)} - {e}")
+        raise
 
 

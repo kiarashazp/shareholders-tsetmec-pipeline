@@ -248,8 +248,15 @@ def upsert_data_to_postgres(csv_path: str, session_factory=SessionLocal):
             bool: True if at least one new `HoldingDaily` record was inserted,
                   False if no new records were added.
         Raises:
-            FileNotFoundError, ValueError, SQLAlchemyError
+            TypeError, FileNotFoundError, ValueError, SQLAlchemyError
     """
+    if not isinstance(csv_path, (str, bytes, os.PathLike, int)):
+        try:
+            csv_path = str(csv_path)
+        except Exception:
+            raise TypeError(f"csv_path must be a path-like str, got {type(csv_path)}")
+
+    csv_path = f'{shared_directory}/{csv_path.split("/")[-1]}'
     if not os.path.exists(csv_path):
         raise FileNotFoundError(f"CSV file not found: {csv_path}")
 
