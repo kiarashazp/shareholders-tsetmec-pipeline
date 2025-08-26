@@ -1,3 +1,4 @@
+import logging
 import csv
 import json
 
@@ -16,6 +17,7 @@ from models import *
 
 
 load_dotenv(find_dotenv())
+logger = logging.getLogger("shareholders_pipeline")
 shared_directory = os.getenv('SHARED_DIR', "/opt/airflow/shared")
 prefix = os.getenv('prefix_csv_shareholders', "shareholders")
 
@@ -47,6 +49,7 @@ def read_symbols_from_file(file_path: str):
         with open(file_path, "r", encoding="utf-8") as f:
             data = json.load(f)
         symbols = data.get("ins_codes", [])
+        logger.info(f"✅ Loaded {symbols} symbols")
         return [str(symbol) for symbol in symbols if symbol]
 
     elif extension == '.csv':
@@ -103,6 +106,8 @@ def generate_dates():
 
     working_days = [day.to_gregorian() for day in working_days]
     transform_days = [str(date_time.isoformat()).replace('-', '') for date_time in working_days]
+
+    logger.info(f"✅ Generated {transform_days} working dates")
     return transform_days
 
 
@@ -173,6 +178,7 @@ def fetch_shareholders(symbol, date_str: str):
         }
         shareholders.append(data)
 
+    logger.info(f"✅ finished fetch_shareholders {symbol}-{date_str}")
     return shareholders
 
 
@@ -233,6 +239,7 @@ def save_to_csv(records: list):
             for record in records:
                 writer.writerow(_flatten(row=record))
 
+    logger.info(f"✅ save csv {output_path}")
     return output_path
 
 
@@ -328,16 +335,20 @@ def upsert_data_to_postgres(csv_path: str, session_factory=SessionLocal):
                                 )
                             )
                             inserted_any = True
+
+            logger.info(f"✅ insert {inserted_any} to postgres")
             return inserted_any
 
         except SQLAlchemyError:
             session.rollback()
+            logger.info(f"✅ insert False to postgres")
             raise
 
 
 @task
 def cleanup(successfully, directory=shared_directory, prefix_file="shareholders"):
     if not successfully:
+        logger.info(f"✅ unsuccessfully cleanup")
         return False
 
     if not os.path.exists(directory):
@@ -350,7 +361,9 @@ def cleanup(successfully, directory=shared_directory, prefix_file="shareholders"
             try:
                 os.remove(file_path)
                 print(f"Deleted file: {file_path}")
+                logger.info(f"✅ successfully cleanup {file_path}")
                 return True
             except Exception as e:
                 print(f"Failed to delete {file_path}: {e}")
+                logger.info(f"✅ unsuccessfully cleanup {file_path} because {e}")
                 return False
