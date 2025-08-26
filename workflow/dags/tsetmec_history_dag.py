@@ -39,19 +39,19 @@ with DAG(
 
     try:
         symbols = read_symbols_from_file(f"{shared_directory}/symbols.json")
-        logger.info(f"✅ Loaded {len(symbols)} symbols")
+        logger.info(f"✅ Loaded {symbols} symbols")
 
         dates = generate_dates()
-        logger.info(f"✅ Generated {len(dates)} working dates")
+        logger.info(f"✅ Generated {dates} working dates")
 
         combinations = make_combinations(symbols, dates)
-        logger.info(f"✅ Created {len(combinations)} symbol-date combinations")
+        logger.info(f"✅ Created {combinations} symbol-date combinations")
 
         shareholders = fetch_shareholders.expand_kwargs(combinations)
         logger.info(f"✅ finished fetch_shareholders")
 
         output_csv = save_to_csv.expand(records=shareholders)
-        logger.info(f"✅ save csv ")
+        logger.info(f"✅ save csv")
 
         successfully = upsert_data_to_postgres.expand(csv_path=output_csv)
         logger.info(f"✅ insert to postgres")

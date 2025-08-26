@@ -98,7 +98,7 @@ docker-compose up -d. **This will start**:
     Username: AIRFLOW_ADMIN_USERNAME
     Password: AIRFLOW_ADMIN_PASSWORD
 
-➡️ Add a new server connection in pgAdmin:
+## ➡️ Add a new server connection in pgAdmin:
 
     Name: postgres-etl 
     Host: postgres-etl
