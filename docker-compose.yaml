@@ -54,6 +54,8 @@ services:
       postgres-etl:
         condition: service_healthy
     working_dir: /opt/airflow
+    dns:
+      - 8.8.8.8
     volumes:
       - ./workflow/dags/:/opt/airflow
     env_file: .env
