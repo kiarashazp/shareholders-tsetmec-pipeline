@@ -1,7 +1,6 @@
 import csv
 import json
 
-from dataclasses import is_dataclass
 from datetime import datetime, timedelta
 from itertools import product
 
@@ -12,7 +11,6 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from dotenv import load_dotenv, find_dotenv
 
-from data_class import *
 from database import *
 from models import *
 
