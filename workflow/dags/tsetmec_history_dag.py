@@ -50,7 +50,7 @@ with DAG(
 
         successfully = upsert_data_to_postgres.expand(csv_path=output_csv)
 
-        cleanup(successfully)
+        cleanup.expand(successfully=successfully)
     except Exception as e:
 
         raise
